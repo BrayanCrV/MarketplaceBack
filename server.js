@@ -4,13 +4,13 @@ const cors = require("cors");
 const session = require("express-session");
 const MySQLStore = require("express-mysql-session")(session);
 const path = require("path");
+const { Storage } = require("@google-cloud/storage");
 const fs = require("fs");
 const { google } = require("googleapis");
 const apikeys = require("./api.json");
 const SCOPE = ["https://www.googleapis.com/auth/drive"];
 const multer = require("multer");
 const app = express();
-
 // Configuración de CORS
 const corsOptions = {
   origin: ["http://localhost:3000"],
@@ -27,12 +27,18 @@ app.use(express.json());
 
 // Configuración de la base de datos
 const dbOptions = {
-  host: "localhost",
-  user: "root",
+  host: "database-1.cvg2mai4mclo.us-east-2.rds.amazonaws.com",
+  user: "admin",
   password: "12345678",
   database: "marketplace",
   port: 3306,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  connectTimeout: 10000, // Tiempo para dar por fallida la conexión
+  keepAliveInitialDelay: 300000, // Mantiene vivas las conexiones cada 30 segundos
 };
+
 
 // Conexión con MySQL
 const pool = mysql.createPool(dbOptions);
@@ -49,79 +55,71 @@ async function authorize() {
   await jwtClient.authorize();
   return jwtClient;
 }
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "imagenes");
-  },
-  filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname);
-    const fileName = `${Date.now()}${ext}`;
-    cb(null, fileName);
-  },
-});
+const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// A Function that will upload the desired file to google drive folder
-async function uploadFile(authClient, filePath, fileName) {
+// Inicializar cliente de Google Cloud Storage
+const storageClient = new Storage({ keyFilename: "./marketplace.json" });
+const bucketName = "marketplace-agricola";
+
+// Función para subir el archivo a Google Cloud Storage
+async function uploadFileToGCS(buffer, fileName) {
   return new Promise((resolve, reject) => {
-    const drive = google.drive({ version: "v3", auth: authClient });
+    const file = storageClient.bucket(bucketName).file(fileName);
 
-    const fileMetaData = {
-      name: fileName,
-      parents: ["1txWmJW55FmnUUAV-VO3nmR17i2ybX_fX"], // ID de la carpeta de destino en Google Drive
-    };
-
-    const media = {
-      mimeType: "image/jpeg", // Tipo MIME de la imagen
-      body: fs.createReadStream(filePath), // Lectura de la imagen para subir
-    };
-
-    drive.files.create(
-      {
-        resource: fileMetaData,
-        media: media,
-        fields: "id",
+    const stream = file.createWriteStream({
+      resumable: false,
+      public: true, // Hacer público el archivo para acceso público
+      metadata: {
+        contentType: "image/jpeg",
       },
-      function (err, file) {
-        if (err) {
-          return reject(err);
-        }
+    });
 
-        // Una vez subido, generar el enlace público
-        drive.permissions.create(
-          {
-            fileId: file.data.id,
-            resource: { role: "reader", type: "anyone" },
-          },
-          function (err, perm) {
-            if (err) {
-              return reject(err);
-            }
+    stream.on("finish", () => {
+      const fileUrl = `https://storage.googleapis.com/${bucketName}/${fileName}`;
+      resolve(fileUrl);
+    });
 
-            const fileUrl = `https://drive.google.com/thumbnail?id=${file.data.id}&sz=w1000-h1000`;
-            resolve(fileUrl); // Retorna la URL de descarga
-          }
-        );
-      }
-    );
+    stream.on("error", (error) => {
+      reject(error);
+    });
+
+    // Enviar el búfer al stream de Google Cloud Storage
+    stream.end(buffer);
   });
 }
 
-// Ruta para subir la imagen
 app.post("/SubirImagen", upload.single("file"), async (req, res) => {
   try {
-    // Si el archivo no fue enviado
     if (!req.file) {
       return res.status(400).send("No se ha enviado ninguna imagen.");
     }
 
-    const authClient = await authorize();
+    // Generar el nombre de archivo con fecha y hora
+    const fileName = `${Date.now()}_${req.file.originalname}`;
+
+    // Subir la imagen a Google Cloud Storage usando el buffer en memoria
+    const fileUrl = await uploadFileToGCS(req.file.buffer, fileName);
+
+    // Responder con la URL de la imagen subida
+    res.status(200).json({ url: fileUrl });
+  } catch (error) {
+    console.error("Error al subir la imagen:", error);
+    res.status(500).json({ message: "Error al subir la imagen." });
+  }
+});
+// Ruta para subir la imagen
+app.post("/SubirImagen", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).send("No se ha enviado ninguna imagen.");
+    }
 
     // Generar el nombre de archivo con fecha y hora
     const fileName = `${Date.now()}_${req.file.originalname}`;
 
-    // Subir la imagen a Google Drive
-    const fileUrl = await uploadFile(authClient, req.file.path, fileName);
+    // Subir la imagen a Google Cloud Storage
+    const fileUrl = await uploadFileToGCS(req.file.path, fileName);
 
     // Eliminar el archivo temporal después de subirlo
     fs.unlinkSync(req.file.path);
@@ -159,6 +157,19 @@ app.get("/test-connection", async (req, res) => {
     });
   }
 });
+
+async function reconnect() {
+  try {
+    await pool.getConnection();
+    console.log("Conexión establecida con éxito.");
+  } catch (error) {
+    console.error("Error de conexión:", error);
+    setTimeout(reconnect, 5000); // Intenta reconectar después de 5 segundos
+  }
+}
+
+reconnect(); // Llama a esta función para iniciar el proceso de reconexión
+
 // Endpoint para registrar un cliente
 app.post("/Login", async (req, res) => {
   const { nickname, password } = req.body;
