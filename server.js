@@ -7,9 +7,10 @@ const path = require("path");
 const { Storage } = require("@google-cloud/storage");
 const fs = require("fs");
 const { google } = require("googleapis");
-const apikeys = require("./api.json");
 const SCOPE = ["https://www.googleapis.com/auth/drive"];
 const multer = require("multer");
+require("dotenv").config();
+
 const app = express();
 // Configuración de CORS
 const corsOptions = {
@@ -59,8 +60,15 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 // Inicializar cliente de Google Cloud Storage
-const storageClient = new Storage({ keyFilename: "./marketplace.json" });
-const bucketName = "marketplace-agricola";
+const storageClient = new Storage({ 
+  projectId: process.env.GOOGLE_PROJECT_ID,
+  credentials: {
+      client_email: process.env.GOOGLE_CLIENT_EMAIL,
+      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+  }
+});
+const bucketName = process.env.GOOGLE_BUCKET_NAME;
+
 
 // Función para subir el archivo a Google Cloud Storage
 async function uploadFileToGCS(buffer, fileName) {

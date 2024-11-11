@@ -8,6 +8,7 @@ api.json
 marketplace.json
 # testing
 /coverage
+.env
 
 # production
 /build
