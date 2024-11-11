@@ -14,11 +14,12 @@ require("dotenv").config();
 const app = express();
 // Configuración de CORS
 const corsOptions = {
-  origin: ["http://localhost:3000"],
+  origin: true, // Permite cualquier origen
   credentials: true,
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   allowedHeaders: "Content-Type, Accept",
 };
+
 
 // Middleware para manejar CORS y datos
 app.use(cors(corsOptions));
