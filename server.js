@@ -23,9 +23,10 @@ const corsOptions = {
 
 // Middleware para manejar CORS y datos
 app.use(cors(corsOptions));
-app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
 
 // Configuración de la base de datos
 const dbOptions = {
@@ -117,6 +118,7 @@ app.post("/SubirImagen", upload.single("file"), async (req, res) => {
     res.status(500).json({ message: "Error al subir la imagen." });
   }
 });
+
 // Ruta para subir la imagen
 app.post("/SubirImagen", upload.single("file"), async (req, res) => {
   try {
