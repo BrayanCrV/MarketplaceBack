@@ -30,11 +30,11 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Configuración de la base de datos
 const dbOptions = {
-  host: "database-1.cvg2mai4mclo.us-east-2.rds.amazonaws.com",
-  user: "admin",
-  password: "12345678",
-  database: "marketplace",
-  port: 3306,
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_DATABASE,
+  port: process.env.DB_PORT,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -66,7 +66,7 @@ const storageClient = new Storage({
   projectId: process.env.GOOGLE_PROJECT_ID,
   credentials: {
       client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+      private_key: process.env.GOOGLE_PRIVATE_KEY
   }
 });
 const bucketName = process.env.GOOGLE_BUCKET_NAME;
@@ -526,5 +526,6 @@ app.get("/obtenerConversacion", async (req, res) => {
 
 const PORT = 3001;
 app.listen(PORT, () => {
+  console.log(process.env.HOST);
   console.log(`Servidor escuchando en http://localhost:${PORT}`);
 });
